@@ -9,7 +9,19 @@ import { db } from './db';
  * No plaintext passwords are ever stored or logged.
  */
 
-const secret = new TextEncoder().encode(getOrCreateSecret());
+/**
+ * JWT signing secret — resolved LAZILY on first use, never at module load.
+ * getOrCreateSecret() touches the filesystem (storage dir); running it at
+ * import time crashes route modules on hosts with a read-only filesystem
+ * (Vercel/Netlify serverless), turning every route into an opaque 500 before
+ * any try/catch can answer. Lazy resolution lets api-utils translate that
+ * failure into a clean 503 with an actionable message instead.
+ */
+let cachedSecret: Uint8Array | null = null;
+function jwtSecret(): Uint8Array {
+  if (!cachedSecret) cachedSecret = new TextEncoder().encode(getOrCreateSecret());
+  return cachedSecret;
+}
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -42,7 +54,7 @@ export async function createSessionToken(userId: string): Promise<string> {
     .setIssuedAt()
     .setIssuer('html2apk-studio')
     .setExpirationTime(`${config.sessionDays}d`)
-    .sign(secret);
+    .sign(jwtSecret());
 }
 
 export async function setSessionCookie(userId: string) {
@@ -68,7 +80,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     const jar = await cookies();
     const token = jar.get(config.sessionCookie)?.value;
     if (!token) return null;
-    const { payload } = await jwtVerify(token, secret, { issuer: 'html2apk-studio' });
+    const { payload } = await jwtVerify(token, jwtSecret(), { issuer: 'html2apk-studio' });
     if (!payload.sub) return null;
     const user = await db.user.findUnique({ where: { id: payload.sub } });
     if (!user || user.status !== 'ACTIVE') return null;

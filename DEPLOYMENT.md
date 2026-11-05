@@ -89,10 +89,13 @@ npx prisma db push     # or prisma migrate deploy for production databases
 | `H2A_ROOT` | process working directory | app root (locates android-template + worker) |
 | `H2A_SEED_ADMIN_PASSWORD` | demo default | password for `admin@html2apk.studio` created on first run — **change it in production** |
 | `H2A_SEED_DEMO` | unset | set `true` to also create `demo@html2apk.studio` in production |
+| `H2A_JWT_SECRET` | auto-generated | optional 32+ char secret for JWT signing + keystore encryption (env-based deployments; `openssl rand -hex 32`) |
 
-Secrets: a 48-byte hex secret is auto-generated at `<storage>/.h2a_secret` (mode 0600)
-and used for JWT signing + keystore-password encryption. Back it up; without it saved
-keystore passwords cannot be decrypted.
+Secrets: by default a 48-byte hex secret is auto-generated at `<storage>/.h2a_secret`
+(mode 0600) and used for JWT signing + keystore-password encryption. Back it up;
+without it saved keystore passwords cannot be decrypted. Set `H2A_JWT_SECRET`
+instead when the storage dir is not writable or when replicas must share the
+secret.
 
 Gradle dependency pre-warm (first build downloads ~1–2 GB into `H2A_GRADLE_USER_HOME`):
 

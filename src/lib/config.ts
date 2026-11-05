@@ -78,6 +78,12 @@ export function ensureStorageDirs() {
 
 /** Persistent secret used for JWT signing and AES secret encryption. */
 export function getOrCreateSecret(): string {
+  // Explicit override first (Docker secrets, PaaS env vars) — zero FS access.
+  const fromEnv = process.env.H2A_JWT_SECRET?.trim();
+  if (fromEnv && fromEnv.length >= 32) return fromEnv;
+  // Falls back to a generated secret persisted in the storage dir. On hosts
+  // with a read-only filesystem (serverless) this throws — callers resolve it
+  // lazily so the error surfaces as a clean 503, never a route-load 500.
   ensureStorageDirs();
   try {
     const existing = fs.readFileSync(config.secretFile, 'utf8').trim();
