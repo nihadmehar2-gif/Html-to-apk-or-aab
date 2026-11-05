@@ -172,3 +172,37 @@ and once with a worker command (`H2A_WORKER_ONLY=1` keeps the queue pump running
 | 429 responses | Rate limits reached — tune `src/lib/config.ts` limits |
 | Duplicate kotlin-stdlib classes | Already fixed in the generated `app/build.gradle` (resolutionStrategy force 1.8.22) |
 | inotify watch exhaustion in dev | Fixed: toolchain dirs are excluded from the Next.js watcher (`.gitignore` + Turbopack) and Gradle runs with `org.gradle.vfs.watch=false` |
+
+## 9. Why Vercel / Netlify / serverless hosting is not supported
+
+HTML2APK Studio runs **real Gradle builds on the server**. That requires a
+long-running Node process, a ~2 GB local toolchain (JDK 21, Gradle 8.11.1,
+Android SDK 36), a writable persistent filesystem for `storage/` + `db/`, and
+single builds that run 2–15 minutes. Serverless platforms cannot provide any
+of these:
+
+| Requirement | Vercel limit |
+| --- | --- |
+| Function bundle size | 250 MB unzipped — the toolchain alone is ~2 GB |
+| Execution time | 60 s (Hobby) / 300 s (Pro) per invocation; Gradle builds take 2–15 min |
+| Filesystem | read-only outside ephemeral `/tmp`; `storage/` and the SQLite `db/` cannot persist between requests |
+| Background workers | not supported — the build worker, heartbeat reaper and queue need a live process |
+
+Deploying only the UI would produce a platform where every build fails. This
+project never fakes builds, so serverless targets are unsupported by design.
+
+### Where it deploys in one command
+
+Any VPS / cloud VM (Ubuntu 22.04+, 4 GB RAM, 20 GB disk, Docker installed):
+
+```bash
+git clone https://github.com/nihadmehar2-gif/Html-to-apk-or-aab.git html2apk
+cd html2apk && docker compose up -d --build
+# app live on http://<server-ip>:3000 — put Caddy/Nginx in front for HTTPS (see Caddyfile)
+```
+
+**Railway / Render / Fly.io** (container platforms with persistent disks — NOT
+their serverless products): create the service from the GitHub repo, attach a
+persistent volume mounted at `/app/storage` and `/app/db`, set ≥ 4 GB RAM, and
+fill in the env vars from §4. The Dockerfile already contains the whole
+toolchain, so no extra setup steps are needed.
