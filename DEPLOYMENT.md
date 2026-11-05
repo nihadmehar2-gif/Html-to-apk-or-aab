@@ -191,6 +191,30 @@ of these:
 Deploying only the UI would produce a platform where every build fails. This
 project never fakes builds, so serverless targets are unsupported by design.
 
+### Vercel note: framework pin + what a Vercel deployment actually does
+
+`vercel.json` in the repo root pins `"framework": "nextjs"` (plus the standard
+`npm install` / `next build` commands). This matters because the framework
+preset is captured **once at import time**: if the repo was imported before it
+contained `package.json` (e.g. when it held only a lone HTML file), the project
+is pinned to the *Other* (static) preset — Vercel then never runs `next build`,
+creates zero functions, and serves the repo statically, which shows
+"This page doesn't exist" for every route. The `vercel.json` override fixes
+that on the next push without touching the dashboard.
+
+After the pin, a Vercel deployment builds successfully and serves the full UI
+(landing page, views, assets). Every API route that touches the database
+responds with a clean **503** explaining that accounts, uploads and builds
+need a real server (`DatabaseUnavailableError`, see `src/lib/db.ts`), and the
+UI shows a serverless notice banner pointing at this document. No fake data,
+no fake builds. Verified locally with `vercel build --prod`: the Build Output
+API contains the prerendered landing page, 404/500 pages and one serverless
+function per API route. (Running `vercel build` inside the dev sandbox prints
+"max function size exceeded" warnings — that is only because the sandbox has
+the 1.6 GB `tools/` + `android-sdk/` + `.gradle-home/` toolchain on disk; a
+fresh CI clone does not, since those paths are gitignored and provisioned at
+runtime by `scripts/sdk-setup.sh`.)
+
 ### Where it deploys in one command
 
 Any VPS / cloud VM (Ubuntu 22.04+, 4 GB RAM, 20 GB disk, Docker installed):
