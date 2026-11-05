@@ -49,7 +49,7 @@ ENV H2A_ANDROID_SDK=/opt/android-sdk \
     H2A_MAVEN_MIRROR=standard \
     NODE_ENV=production
 
-RUN npm run build
+RUN npm run build:standalone
 
 EXPOSE 3000
 CMD ["npm", "run", "start"]

@@ -42,6 +42,14 @@ const createSchema = z.object({
  * The real Gradle build runs in an isolated detached worker process.
  */
 export async function POST(req: NextRequest) {
+  if (process.env.VERCEL) {
+    // Honest refusal — Gradle cannot run on serverless: 250 MB function limit
+    // vs ~2 GB toolchain, 60-300 s execution vs 2-15 min builds, read-only FS.
+    return NextResponse.json({
+      error: 'Android builds cannot run on serverless hosting (Vercel). Gradle needs a long-lived server with a persistent filesystem and a ~2 GB toolchain. Deploy in one command with Docker — see DEPLOYMENT.md §9.',
+      code: 'BUILDS_UNSUPPORTED_SERVERLESS',
+    }, { status: 503 });
+  }
   try {
     const user = await requireUser();
     ensureStorageDirs();

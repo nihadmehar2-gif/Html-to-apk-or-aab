@@ -57,6 +57,23 @@ fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
 
 let cancelled = false;
 let gradleProc = null;
+
+// Kill the detached Gradle process group if the worker dies for any reason
+// (OOM, crash, external kill) — otherwise an orphaned Gradle keeps ~1 GB+ RAM
+// allocated until the sandbox/host restarts.
+function killGradleTree() {
+  if (gradleProc && gradleProc.pid) {
+    try { process.kill(-gradleProc.pid, 'SIGKILL'); } catch { /* already gone */ }
+  }
+}
+process.on('exit', killGradleTree);
+process.on('SIGTERM', () => { killGradleTree(); process.exit(1); });
+process.on('SIGINT', () => { killGradleTree(); process.exit(1); });
+process.on('uncaughtException', (e) => {
+  try { log(`uncaught exception: ${e && e.message}`); } catch { /* log file unavailable */ }
+  killGradleTree();
+  process.exit(1);
+});
 const startTs = Date.now();
 
 // ---------------------------------------------------------------- utilities

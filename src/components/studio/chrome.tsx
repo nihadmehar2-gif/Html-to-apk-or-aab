@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import type { User } from './types';
 import { api } from './api';
+import { ServerlessNotice } from './serverless-notice';
 
 export function Logo({ className = '' }: { className?: string }) {
   return (
@@ -121,6 +122,7 @@ export function Navbar({ user, view, onNavigate }: { user: User | null; view: Vi
           ))}
         </div>
       )}
+      <ServerlessNotice />
     </header>
   );
 }
