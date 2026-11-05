@@ -23,7 +23,7 @@ dl() { # dl <output> <url> <fallback-url>
 
 echo "[1/6] Gradle 8.11.1..."
 dl /tmp/gradle.zip "$M/gradle/gradle-8.11.1-bin.zip" "https://services.gradle.org/distributions/gradle-8.11.1-bin.zip"
-if [ ! -d "$TOOLS/gradle-8.11.1" ]; then
+if [ ! -x "$TOOLS/gradle-8.11.1/bin/gradle" ]; then
   cd "$TOOLS" && unzip -qo /tmp/gradle.zip
 fi
 "$TOOLS/gradle-8.11.1/bin/gradle" --version 2>&1 | grep -E "Gradle|JVM:" | head -3 || true
@@ -78,5 +78,8 @@ find "$SDK" -maxdepth 4 \( -name aapt2 -o -name aapt -o -name zipalign -o -name 
 echo "[6/6] Verify..."
 "$SDK/build-tools/36.0.0/aapt2" version 2>&1 || echo "WARN: aapt2 version failed"
 test -f "$SDK/platforms/android-36/android.jar" && echo "android.jar OK ($(du -h "$SDK/platforms/android-36/android.jar" | cut -f1))"
+test -x "$TOOLS/gradle-8.11.1/bin/gradle" && echo "gradle binary OK"
+test -x "$TOOLS/jdk-21/bin/javac" && echo "javac OK"
 "$TOOLS/gradle-8.11.1/bin/gradle" --version 2>&1 | grep -E "Gradle|JVM:" | head -3
+"$TOOLS/jdk-21/bin/java" -version 2>&1 | head -1
 echo "SDK_SETUP_COMPLETE"

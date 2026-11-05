@@ -40,8 +40,8 @@ const ROOT = process.env.H2A_ROOT
   || path.resolve(path.dirname(new URL(import.meta.url).pathname), '..'); // <project>/scripts/ -> <project>
 const BUILD_ID = process.env.H2A_BUILD_ID;
 const STORAGE = path.join(ROOT, 'storage');
-const SDK = process.env.H2A_ANDROID_SDK || path.join(ROOT, 'android-sdk');
-const GRADLE_BIN = process.env.H2A_GRADLE_BIN || path.join(ROOT, 'tools', 'gradle-8.11.1', 'bin', 'gradle');
+let SDK = process.env.H2A_ANDROID_SDK || path.join(ROOT, 'android-sdk');
+let GRADLE_BIN = process.env.H2A_GRADLE_BIN || path.join(ROOT, 'tools', 'gradle-8.11.1', 'bin', 'gradle');
 const BUILD_TOOLS = process.env.H2A_BUILD_TOOLS || '36.0.0';
 const BUILD_TIMEOUT_MIN = Number(process.env.H2A_BUILD_TIMEOUT_MIN || 25);
 const COMPILE_SDK = Number(process.env.H2A_COMPILE_SDK || 36);
@@ -311,6 +311,59 @@ async function run() {
 
   try { await checkCancellation(); } catch (e) { await fail(e.message); return; }
 
+  // ---- Step: build environment self-check (self-healing toolchain) ----
+  // The bundled toolchain lives INSIDE the project (tools/jdk-21, tools/gradle-8.11.1,
+  // android-sdk) so it survives environment restarts. Env overrides (H2A_* / JAVA_HOME)
+  // are honored only when they actually contain a working toolchain; stale paths —
+  // e.g. pointing at a wiped directory — fall back to the bundled copy. If the bundled
+  // copy is itself missing, the worker runs scripts/sdk-setup.sh ONCE (streamed into
+  // this build log) instead of failing mid-build with a cryptic "no javac" error.
+  {
+    const hasJavac = (h) => !!h && fs.existsSync(path.join(h, 'bin', 'javac'));
+    const validSdk = (p) => !!p && (fs.existsSync(path.join(p, 'build-tools', BUILD_TOOLS, 'aapt2'))
+      || fs.existsSync(path.join(p, 'platforms', `android-${COMPILE_SDK}`, 'android.jar')));
+    const bundledJdkDir = path.join(ROOT, 'tools', 'jdk-21');
+    const bundledGradleBin = path.join(ROOT, 'tools', 'gradle-8.11.1', 'bin', 'gradle');
+    const bundledSdkDir = path.join(ROOT, 'android-sdk');
+    const bundledOk = hasJavac(bundledJdkDir) && fs.existsSync(bundledGradleBin) && validSdk(bundledSdkDir);
+    if (!bundledOk) {
+      await setProgress('preparing', 8, 'Setting Up Build Environment');
+      log('Bundled build toolchain incomplete (JDK/Gradle/Android SDK) — running one-time setup (scripts/sdk-setup.sh).');
+      log('This downloads Gradle 8.11.1, Temurin JDK 21 and the Android SDK and may take several minutes; later builds run normally.');
+      const res = await new Promise((resolve) => {
+        const p = spawn('bash', [path.join(ROOT, 'scripts', 'sdk-setup.sh')], { cwd: ROOT, env: { ...process.env, H2A_ROOT: ROOT } });
+        let errTail = '';
+        const killer = setTimeout(() => { log('[setup] Setup timed out after 12 minutes — killing.'); p.kill('SIGKILL'); }, 12 * 60 * 1000);
+        p.stdout.on('data', (d) => String(d).split('\n').filter(Boolean).forEach((l) => log(`[setup] ${l}`)));
+        p.stderr.on('data', (d) => { errTail = (errTail + String(d)).slice(-4000); });
+        p.on('exit', (code, signal) => { clearTimeout(killer); resolve({ code, signal, errTail }); });
+        p.on('error', (e) => { clearTimeout(killer); resolve({ code: -1, signal: null, errTail: String(e) }); });
+      });
+      if (res.code !== 0) {
+        await fail(`Automatic build-environment setup failed (exit ${res.code}${res.signal ? `, ${res.signal}` : ''}). Run "bash scripts/sdk-setup.sh" once on the server, then retry the build.`, res.errTail.slice(-3000));
+        return;
+      }
+      log('Build environment setup completed.');
+      try { await checkCancellation(); } catch (e) { await fail(e.message); return; }
+    }
+    // Post-setup re-validation: the setup script must actually have repaired the
+    // toolchain (guards against partially restored installs).
+    if (!bundledOk && !(hasJavac(bundledJdkDir) && fs.existsSync(bundledGradleBin) && validSdk(bundledSdkDir))) {
+      await fail('Build-environment setup finished but the toolchain is still incomplete (JDK/Gradle/Android SDK). See the [setup] lines above for the failing step, or run "bash scripts/sdk-setup.sh" manually on the server.');
+      return;
+    }
+    // Effective toolchain: env override only when it actually exists, bundled otherwise.
+    if (!fs.existsSync(GRADLE_BIN) && fs.existsSync(bundledGradleBin)) {
+      if (GRADLE_BIN !== bundledGradleBin) log(`H2A_GRADLE_BIN=${GRADLE_BIN} is not usable — falling back to bundled Gradle.`);
+      GRADLE_BIN = bundledGradleBin;
+    }
+    if (!validSdk(SDK) && validSdk(bundledSdkDir)) {
+      if (SDK !== bundledSdkDir) log(`H2A_ANDROID_SDK=${SDK} is not usable — falling back to bundled Android SDK.`);
+      SDK = bundledSdkDir;
+    }
+    log(`Toolchain resolved: GRADLE_BIN=${GRADLE_BIN} SDK=${SDK}`);
+  }
+
   // ---- Step: generate Android project ----
   await setProgress('preparing', 30, 'Preparing Android Project');
   fs.cpSync(path.join(ROOT, 'android-template'), androidDir, { recursive: true });
@@ -442,19 +495,28 @@ ${featureXml}${permXml}
   log(`Website packaged into app assets (assets/www/${entryPath} is the start page)`);
 
   // ---- Step: java toolchain ----
-  // Prefer the bundled JDK (has javac) over an ambient JRE-only JAVA_HOME.
-  // Resolved early so signing preflight (keytool) and AAB verification
-  // (jarsigner / bundletool) all use the exact same JDK.
+  // First candidate that ACTUALLY contains bin/javac wins: H2A_JAVA_HOME, the bundled
+  // JDK (tools/jdk-21), JAVA_HOME, the standard system JVM, then PATH. A stale
+  // H2A_JAVA_HOME or a JRE-only system JAVA_HOME must never win over the bundled JDK.
+  // Resolved early so signing preflight (keytool) and AAB verification (jarsigner /
+  // bundletool) all use the exact same JDK.
   const bundledJdk = path.join(ROOT, 'tools', 'jdk-21');
-  const javaHome = process.env.H2A_JAVA_HOME
-    || (fs.existsSync(path.join(bundledJdk, 'bin', 'javac')) ? bundledJdk : '')
-    || process.env.JAVA_HOME
-    || (fs.existsSync('/usr/lib/jvm/java-21-openjdk-amd64/bin/javac') ? '/usr/lib/jvm/java-21-openjdk-amd64'
-      : path.dirname(path.dirname(require('child_process').execSync('which javac').toString().trim())));
-  if (!fs.existsSync(path.join(javaHome, 'bin', 'javac'))) {
-    await fail(`No Java compiler (javac) found under JAVA_HOME=${javaHome}. Install a JDK 17+ or set H2A_JAVA_HOME.`);
+  const hasJavac = (h) => !!h && fs.existsSync(path.join(h, 'bin', 'javac'));
+  const javaCandidates = [process.env.H2A_JAVA_HOME, bundledJdk, process.env.JAVA_HOME, '/usr/lib/jvm/java-21-openjdk-amd64'];
+  try {
+    const onPath = require('child_process').execSync('command -v javac', { encoding: 'utf8' }).trim();
+    if (onPath) javaCandidates.push(path.dirname(path.dirname(onPath)));
+  } catch { /* javac not on PATH — final check below reports it */ }
+  const javaHome = javaCandidates.find(hasJavac);
+  if (!javaHome) {
+    await fail('No Java compiler (javac) available (checked H2A_JAVA_HOME, tools/jdk-21, JAVA_HOME and the system JVM). Install a JDK 17+ or run "bash scripts/sdk-setup.sh" once on the server.');
     return;
   }
+  try {
+    const jcBin = path.join(javaHome, 'bin', 'javac');
+    const jcVer = require('child_process').execSync(`"${jcBin}" -version`, { encoding: 'utf8' }).trim();
+    log(`Using JDK: ${javaHome} (${jcVer})`);
+  } catch { log(`Using JDK: ${javaHome}`); }
 
   // ---- Step: signing config ----
   await setProgress('signing', 47, 'Preparing Signing');
