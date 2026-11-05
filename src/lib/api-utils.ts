@@ -13,7 +13,12 @@ export function errorResponse(e: unknown): NextResponse {
   const msg = e instanceof Error ? e.message : 'Internal server error';
   // Serverless hosts: translate environment limitations into honest 503s
   // instead of opaque 500s.
-  if (/EROFS|EACCES|read-only file system|readonly file system/i.test(msg)) {
+  // Note: on read-only filesystems (Vercel etc.) Node's recursive mkdirSync
+  // often reports ENOENT instead of EROFS — hence the second pattern.
+  if (
+    /EROFS|EACCES|EPERM|ENOSPC|read-only file system|readonly file system/i.test(msg) ||
+    /ENOENT: no such file or directory, (mkdir|open|writeFile|scandir|readdir|copyfile|rename|unlink|utimes|chmod)/i.test(msg)
+  ) {
     return NextResponse.json({ error: 'This host has a read-only filesystem (serverless hosting). Uploads, keystores and build artifacts require persistent storage — deploy with Docker in one command (see DEPLOYMENT.md §9).', code: 'NO_PERSISTENT_STORAGE' }, { status: 503 });
   }
   if (/P1001|P1003|P2021|did not initialize yet|Environment variable not found: DATABASE_URL|Can't reach database server/i.test(msg)) {
