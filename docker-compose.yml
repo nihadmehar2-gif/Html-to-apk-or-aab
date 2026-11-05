@@ -1,0 +1,48 @@
+version: "3.9"
+
+services:
+  app:
+    build: .
+    container_name: html2apk-app
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "file:/app/db/custom.db"
+      # raise to 2-4 on 4+ vCPU hosts
+      H2A_MAX_CONCURRENT_BUILDS: "1"
+      H2A_BUILD_TIMEOUT_MIN: "25"
+      H2A_RETENTION_DAYS: "7"
+      # set to "aliyun" if dl.google.com / maven.google.com are slow in your region
+      H2A_MAVEN_MIRROR: "standard"
+    volumes:
+      # persist uploads, artifacts, keystores, logs, database
+      - h2a-storage:/app/storage
+      - h2a-db:/app/db
+      # persist Gradle dependency cache (~2 GB after first build)
+      - h2a-gradle:/root/.gradle
+    deploy:
+      resources:
+        limits:
+          memory: 6g
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/system/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Optional: PostgreSQL for multi-instance deployments.
+  # Switch prisma datasource provider to "postgresql" and point DATABASE_URL at it.
+  # db:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_USER: html2apk
+  #     POSTGRES_PASSWORD: change-me
+  #     POSTGRES_DB: html2apk
+  #   volumes:
+  #     - h2a-pg:/var/lib/postgresql/data
+
+volumes:
+  h2a-storage:
+  h2a-db:
+  h2a-gradle:
+  # h2a-pg:

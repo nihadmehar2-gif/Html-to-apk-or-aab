@@ -1,0 +1,71 @@
+# ------------------------------------------------------------------
+# HTML2APK Studio — never commit secrets, databases, keys or artifacts
+# ------------------------------------------------------------------
+
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# next.js
+/.next/
+/out/
+/build/
+/dist/
+
+# env files & secrets (keep only the example)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+storage/.h2a_secret
+
+# databases
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+/db/
+/prisma/dev/
+
+# runtime data: uploads, build artifacts, generated keys
+/storage/
+/download/
+/upload/
+/skills/
+/keystores/
+/keys/
+
+# logs & pid files
+*.log
+*.pid
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# sandbox / local workspace tooling
+/.zscripts/
+/mini-services/
+/tool-results/
+/agent-ctx/
+/.claude
+.z-ai-config
+local-*
+test
+
+# misc
+.DS_Store
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+/coverage

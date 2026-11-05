@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String?
+  passwordHash String
+  role         String    @default("USER") // USER | ADMIN
+  status       String    @default("ACTIVE") // ACTIVE | SUSPENDED
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  projects  Project[]
+  builds    Build[]
+  keystores Keystore[]
+}
+
+model Project {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  sourceType   String // HTML | ZIP
+  originalName String
+  size         Int
+  fileCount    Int      @default(0)
+  entryPath    String // entry html path relative to web root
+  storagePath  String // directory where upload is stored
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  builds Build[]
+}
+
+model Build {
+  id            String    @id @default(cuid())
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status        String    @default("QUEUED") // QUEUED | RUNNING | SUCCEEDED | FAILED | CANCELLED | EXPIRED
+  buildType     String    @default("DEBUG") // DEBUG | RELEASE
+  configJson    String // full app configuration snapshot
+  step          String    @default("Queued")
+  progress      Int       @default(0)
+  logPath       String
+  apkPath       String?
+  apkSize       Int?
+  aabPath       String?
+  aabSize       Int?
+  versionName   String
+  versionCode   Int
+  packageName   String
+  appName       String
+  errorMessage  String?
+  workerPid     Int?
+  downloadCount Int       @default(0)
+  createdAt     DateTime  @default(now())
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  expiresAt     DateTime
+
+  downloads DownloadLog[]
+}
+
+model Keystore {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alias          String
+  filePath       String
+  passwordEnc    String // AES-256-GCM encrypted keystore password
+  keyPasswordEnc String // AES-256-GCM encrypted key password
+  commonName     String?
+  organization   String?
+  createdAt      DateTime @default(now())
+}
+
+model DownloadLog {
+  id        String   @id @default(cuid())
+  buildId   String
+  build     Build    @relation(fields: [buildId], references: [id], onDelete: Cascade)
+  userId    String
+  fileType  String // APK | AAB | LOGS
+  ip        String?
+  createdAt DateTime @default(now())
+}
+
+model Setting {
+  key   String @id
+  value String
+}

@@ -1,0 +1,27 @@
+pluginManagement {
+    def useMirror = System.getenv('H2A_MAVEN_MIRROR') == 'aliyun'
+    repositories {
+        if (useMirror) {
+            maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+            maven { url 'https://maven.aliyun.com/repository/google' }
+            maven { url 'https://maven.aliyun.com/repository/public' }
+        }
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    def useMirror = System.getenv('H2A_MAVEN_MIRROR') == 'aliyun'
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        if (useMirror) {
+            maven { url 'https://maven.aliyun.com/repository/google' }
+            maven { url 'https://maven.aliyun.com/repository/public' }
+        }
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = 'HTML2APKApp'
+include ':app'
