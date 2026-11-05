@@ -28,13 +28,14 @@ inside them on real hardware. Before trusting the WebView behavior changes
 12. Release APK: signature dialog shows "unknown developer" (expected for
     self-signed keys).
 
-## 2. AAB signature verification
+## 2. AAB signature verification — RESOLVED (2026-11-05)
 
-`bundletool` is not bundled, so AABs are validated structurally
-(`BundleConfig.pb`, `base/manifest/AndroidManifest.xml`, size floors) but not
-signature-verified like APKs. Play App Signing does its own processing, so this
-does not block uploads — to verify locally: `bundletool build-apks --bundle
-app-release.aab --output x.apks --ks <keystore>` then `apksigner verify x.apks`.
+`bundletool.jar` is now provisioned by `scripts/sdk-setup.sh` (auto-healed by the
+build worker when missing). Every release build verifies AABs with
+`jarsigner -verify` (proof of release-keystore signature) AND
+`bundletool dump manifest` (package/versionCode/versionName identity checked
+against the request and the APK). Verified end-to-end with a real
+`RELEASE --targets BOTH` run: APK 2.47 MB + AAB 2.37 MB, both identity-matched.
 
 ## 3. Scoped follow-ups (non-blocking)
 
