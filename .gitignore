@@ -45,6 +45,11 @@ storage/.h2a_secret
 /keystores/
 /keys/
 
+# local build toolchain (provisioned by scripts/sdk-setup.sh — heavy, machine-specific)
+/tools/
+/android-sdk/
+/.gradle-home/
+
 # logs & pid files
 *.log
 *.pid
